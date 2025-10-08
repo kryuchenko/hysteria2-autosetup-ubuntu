@@ -9,7 +9,7 @@ Automated Hysteria2 server setup script for Ubuntu 22.04+ LTS (amd64).
 Run directly from GitHub:
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/kryuchenko/hysteria2-autosetup-ubuntu24/refs/heads/main/setup.sh) yourdomain.com admin@example.com
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/kryuchenko/hysteria2-autosetup-ubuntu/refs/heads/main/setup.sh) yourdomain.com admin@example.com
 ```
 
 Replace:
