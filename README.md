@@ -1,1 +1,1 @@
-# hysteria2-autosetup-ubuntu24-
+# hysteria2-autosetup-ubuntu24
