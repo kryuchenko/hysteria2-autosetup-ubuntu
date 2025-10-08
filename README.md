@@ -1,6 +1,6 @@
-# hysteria2-autosetup-ubuntu24
+# hysteria2-autosetup-ubuntu
 
-Automated Hysteria2 server setup script for Ubuntu 24.04 LTS (amd64).
+Automated Hysteria2 server setup script for Ubuntu 22.04+ LTS (amd64).
 
 ## Features
 
@@ -9,17 +9,28 @@ Automated Hysteria2 server setup script for Ubuntu 24.04 LTS (amd64).
 - 🎭 **Masquerade proxy** - Disguises as regular HTTPS traffic
 - 🔑 **Auto-generated passwords** - Secure random credentials
 - 📋 **Client URI export** - Easy client configuration
+- 🛡️ **SSH protection** - Automatically preserves SSH access when enabling firewall
+- 🔍 **DNS validation** - Checks domain resolution before ACME
 
 ## Prerequisites
 
-1. Ubuntu 24.04 LTS (amd64) VPS
+1. Ubuntu 22.04 or later LTS (amd64) VPS
 2. Domain with A/AAAA record pointing to your server IP
 3. Ports must be accessible: 80/TCP (ACME), 443/TCP+UDP (Hysteria)
 
-## Usage
+## Quick Start
+
+Run directly from GitHub:
 
 ```bash
-sudo ./setup.sh yourdomain.com admin@example.com
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/kryuchenko/hysteria2-autosetup-ubuntu24/refs/heads/main/setup.sh) yourdomain.com admin@example.com
+```
+
+Or download and run locally:
+
+```bash
+curl -O https://raw.githubusercontent.com/kryuchenko/hysteria2-autosetup-ubuntu24/refs/heads/main/setup.sh
+sudo bash setup.sh yourdomain.com admin@example.com
 ```
 
 ### Arguments
@@ -39,25 +50,37 @@ The URI format: `hysteria2://password@domain:443/?obfs=salamander&obfs-password=
 
 ## What the script does
 
-1. Installs Hysteria2 binary and dependencies
-2. Generates random passwords for authentication and obfuscation
-3. Configures ACME for automatic TLS certificates
-4. Sets up UFW firewall rules (80/tcp, 443/tcp, 443/udp)
-5. Enables and starts Hysteria2 server service
-6. Saves client connection URI to `/etc/hysteria/client-uri.txt`
+1. Validates Ubuntu version (22.04+)
+2. Installs dependencies (curl, ca-certificates, ufw, jq, python3, dnsutils, bc)
+3. Installs Hysteria2 binary and systemd service
+4. Checks DNS resolution (domain → server IP)
+5. Generates random passwords for authentication and obfuscation
+6. Configures ACME for automatic TLS certificates
+7. Sets up UFW firewall rules (22/tcp for SSH, 80/tcp, 443/tcp, 443/udp)
+8. Enables and starts Hysteria2 server service
+9. Waits for ACME certificate (10-30 seconds)
+10. Verifies service status
+11. Saves client connection URI to `/etc/hysteria/client-uri.txt`
 
-## Logs
+## Logs and Configuration
 
 - **Server logs**: `journalctl -u hysteria-server.service -e --no-pager`
-- **Firewall setup**: `cat /etc/hysteria/firewall-setup.log`
-- **Configuration**: `/etc/hysteria/config.yaml`
+- **Firewall setup log**: `cat /etc/hysteria/firewall-setup.log`
+- **Server configuration**: `/etc/hysteria/config.yaml`
+- **Client URI**: `/etc/hysteria/client-uri.txt`
 
 ## Security
 
-- All passwords are randomly generated (16-byte base64url)
-- TLS certificates from Let's Encrypt
+- All passwords are randomly generated (16-byte base64url encoded)
+- Valid TLS certificates from Let's Encrypt (auto-renewed)
 - Traffic masqueraded as regular HTTPS (proxies to google.com)
 - Salamander obfuscation for maximum DPI resistance
+- SSH access automatically preserved when enabling firewall
+
+## Compatibility
+
+- **Supported**: Ubuntu 22.04 LTS, Ubuntu 24.04 LTS
+- **Warning mode**: Other Ubuntu versions (proceeds at user's risk)
 
 ## License
 
