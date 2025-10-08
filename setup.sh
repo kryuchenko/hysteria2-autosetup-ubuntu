@@ -140,6 +140,7 @@ masquerade:
     rewriteHost: true
 YAML
   chmod 640 /etc/hysteria/config.yaml
+  chown hysteria:hysteria /etc/hysteria/config.yaml
 }
 
 enable_server_service() {
