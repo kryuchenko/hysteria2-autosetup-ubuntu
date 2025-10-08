@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# hysteria2-autosetup-ubuntu24
-# Ubuntu 24.04 LTS (amd64) Hysteria2 automated server setup
+# hysteria2-autosetup-ubuntu
+# Ubuntu 22.04+ LTS (amd64) Hysteria2 automated server setup
 #
 # Prerequisites:
 #   1. Domain with A/AAAA record pointing to your VPS IP
@@ -15,7 +15,7 @@
 #   admin@example.com - Email for Let's Encrypt notifications
 #
 # Firewall (UFW):
-#   Script automatically opens: 80/tcp, 443/tcp, 443/udp
+#   Script automatically opens: 22/tcp (SSH), 80/tcp, 443/tcp, 443/udp
 #
 # Features:
 # - Salamander obfs + ACME TLS + masquerade proxy (443/UDP+TCP)
@@ -31,25 +31,32 @@ must_root() {
   fi
 }
 
-is_ubuntu_24() {
+is_ubuntu_supported() {
   . /etc/os-release || true
-  [[ "${NAME:-}" == "Ubuntu" && "${VERSION_ID:-}" == "24.04" ]]
+  if [[ "${NAME:-}" == "Ubuntu" ]]; then
+    local version="${VERSION_ID:-0}"
+    # Check version >= 22.04
+    if [[ $(echo "$version >= 22.04" | bc -l 2>/dev/null || echo "0") -eq 1 ]]; then
+      return 0
+    fi
+  fi
+  return 1
 }
 
 install_prereqs() {
   apt-get update -y
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    curl ca-certificates ufw jq python3
+    curl ca-certificates ufw jq python3 dnsutils bc
 }
 
 install_hysteria_binary() {
   if ! command -v hysteria >/dev/null 2>&1; then
-    # Официальный инсталлятор: ставит бинарь и службу
+    # Official installer: installs binary and systemd service
     bash <(curl -fsSL https://get.hy2.sh/)
-    # Обновляем PATH после установки
+    # Update PATH after installation
     export PATH="/usr/local/bin:$PATH"
   fi
-  # Проверяем установку через прямой путь
+  # Verify installation via direct path
   if ! command -v hysteria >/dev/null 2>&1 && [ ! -x /usr/local/bin/hysteria ]; then
     echo "hysteria not found after install" >&2
     exit 1
@@ -63,7 +70,7 @@ ensure_dirs() {
 
 check_port_open() {
   local port="$1" proto="$2"
-  # Проверяем есть ли правило в UFW
+  # Check if UFW rule exists
   if ufw status | grep -qE "${port}/${proto}.*ALLOW"; then
     return 0
   else
@@ -75,7 +82,10 @@ ufw_server_rules() {
   local log_file="/etc/hysteria/firewall-setup.log"
   echo "=== Firewall setup log $(date) ===" > "$log_file"
 
-  # Разрешаем ACME и трафик 443/udp+tcp; включаем UFW, если он был выключен
+  # Allow SSH first to prevent losing access
+  ufw --force allow 22/tcp 2>&1 | tee -a "$log_file" || true
+
+  # Allow ACME and Hysteria traffic (443/udp+tcp)
   ufw --force allow 80/tcp 2>&1 | tee -a "$log_file" || true
   ufw --force allow 443/tcp 2>&1 | tee -a "$log_file" || true
   ufw --force allow 443/udp 2>&1 | tee -a "$log_file" || true
@@ -84,7 +94,7 @@ ufw_server_rules() {
     ufw --force enable 2>&1 | tee -a "$log_file"
   fi
 
-  # Проверка результатов
+  # Verify results
   echo "" >> "$log_file"
   echo "=== Port check results ===" >> "$log_file"
 
@@ -122,7 +132,7 @@ acme:
     - ${domain}
   email: ${email}
 
-# Максимальная обфускация Salamander
+# Maximum obfuscation with Salamander
 obfs:
   type: salamander
   salamander:
@@ -132,7 +142,7 @@ auth:
   type: password
   password: "${auth_pass}"
 
-# Маскарад под обычный сайт
+# Masquerade as regular website
 masquerade:
   type: proxy
   proxy:
@@ -156,8 +166,50 @@ generate_random_password() {
   python3 -c "import secrets, base64; print(base64.urlsafe_b64encode(secrets.token_bytes(16)).decode().rstrip('='))"
 }
 
+check_dns_resolution() {
+  local domain="$1"
+  echo "Checking DNS resolution for ${domain}..."
+
+  # Get server public IP
+  local server_ip
+  server_ip=$(curl -s -4 ifconfig.me || curl -s -4 icanhazip.com || echo "")
+
+  if [[ -z "$server_ip" ]]; then
+    echo "⚠️  Warning: Could not determine server IP address"
+    return 0
+  fi
+
+  # Check if domain resolves
+  local resolved_ip
+  resolved_ip=$(dig +short "$domain" A | head -1 || echo "")
+
+  if [[ -z "$resolved_ip" ]]; then
+    echo "⚠️  Warning: Domain ${domain} does not resolve to any IP"
+    echo "   Make sure your DNS A/AAAA record is configured"
+    return 0
+  fi
+
+  if [[ "$resolved_ip" != "$server_ip" ]]; then
+    echo "⚠️  Warning: Domain ${domain} resolves to ${resolved_ip}"
+    echo "   But server IP is ${server_ip}"
+    echo "   ACME validation may fail!"
+    return 0
+  fi
+
+  echo "✓ DNS check passed: ${domain} → ${server_ip}"
+}
+
 menu_server() {
   local domain="$1" email="$2"
+
+  echo "== SERVER setup (automated) =="
+  echo "Domain: ${domain}"
+  echo "Email: ${email}"
+  echo
+
+  # Check DNS before proceeding
+  check_dns_resolution "$domain"
+  echo
 
   # Generate random passwords
   local obfs_pass auth_pass
@@ -165,9 +217,6 @@ menu_server() {
   auth_pass="$(generate_random_password)"
   local masquerade_url="https://www.google.com"
 
-  echo "== SERVER setup (automated) =="
-  echo "Domain: ${domain}"
-  echo "Email: ${email}"
   echo "Generating random passwords..."
 
   install_hysteria_binary
@@ -175,6 +224,19 @@ menu_server() {
   write_server_config "$domain" "$email" "$obfs_pass" "$auth_pass" "$masquerade_url"
   ufw_server_rules
   enable_server_service
+
+  # Wait for service to start and ACME certificate to be obtained
+  echo
+  echo "Waiting for ACME certificate (this may take 10-30 seconds)..."
+  sleep 15
+
+  # Check service status
+  if systemctl is-active --quiet hysteria-server.service; then
+    echo "✓ Hysteria server is running"
+  else
+    echo "⚠️  Warning: Hysteria server may have issues. Check logs:"
+    echo "   journalctl -u hysteria-server.service -e --no-pager"
+  fi
 
   local uri="hysteria2://${auth_pass}@${domain}:443/?obfs=salamander&obfs-password=${obfs_pass}&sni=${domain}"
 
@@ -188,12 +250,22 @@ menu_server() {
   echo
   echo "Content:"
   echo "$uri"
+  echo
+  echo "Logs:"
+  echo "  Server: journalctl -u hysteria-server.service -e --no-pager"
+  echo "  Firewall: cat /etc/hysteria/firewall-setup.log"
 }
 
 # ---------- Entry ----------
 must_root
-if ! is_ubuntu_24; then
-  echo "Warning: script is tested for Ubuntu 24.04, continuing anyway..." >&2
+
+# Check Ubuntu version
+if ! is_ubuntu_supported; then
+  echo "⚠️  WARNING: This script is designed for Ubuntu 22.04 or later" >&2
+  echo "Current system: $(lsb_release -d 2>/dev/null | cut -f2 || echo "Unknown")" >&2
+  echo "Proceeding anyway at your own risk..." >&2
+  echo ""
+  sleep 3
 fi
 
 # Require domain and email arguments
