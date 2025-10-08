@@ -2,6 +2,30 @@
 
 Automated Hysteria2 server setup script for Ubuntu 22.04+ LTS (amd64).
 
+## Quick Start
+
+**Prerequisites:** Ubuntu 22.04+ VPS with a domain pointing to your server IP.
+
+Run directly from GitHub:
+
+```bash
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/kryuchenko/hysteria2-autosetup-ubuntu24/refs/heads/main/setup.sh) yourdomain.com admin@example.com
+```
+
+Replace:
+- `yourdomain.com` - Your domain name (must resolve to your server)
+- `admin@example.com` - Your email for Let's Encrypt notifications
+
+After installation, get your connection URI:
+
+```bash
+cat /etc/hysteria/client-uri.txt
+```
+
+That's it! Use the URI in your Hysteria2 client.
+
+---
+
 ## Features
 
 - 🔐 **Salamander obfuscation** - Maximum traffic obfuscation
@@ -12,41 +36,11 @@ Automated Hysteria2 server setup script for Ubuntu 22.04+ LTS (amd64).
 - 🛡️ **SSH protection** - Automatically preserves SSH access when enabling firewall
 - 🔍 **DNS validation** - Checks domain resolution before ACME
 
-## Prerequisites
+## Detailed Prerequisites
 
 1. Ubuntu 22.04 or later LTS (amd64) VPS
 2. Domain with A/AAAA record pointing to your server IP
 3. Ports must be accessible: 80/TCP (ACME), 443/TCP+UDP (Hysteria)
-
-## Quick Start
-
-Run directly from GitHub:
-
-```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/kryuchenko/hysteria2-autosetup-ubuntu24/refs/heads/main/setup.sh) yourdomain.com admin@example.com
-```
-
-Or download and run locally:
-
-```bash
-curl -O https://raw.githubusercontent.com/kryuchenko/hysteria2-autosetup-ubuntu24/refs/heads/main/setup.sh
-sudo bash setup.sh yourdomain.com admin@example.com
-```
-
-### Arguments
-
-- `yourdomain.com` - Your domain name (must resolve to this server)
-- `admin@example.com` - Email for Let's Encrypt notifications
-
-### Get Client URI
-
-After installation, retrieve the connection URI:
-
-```bash
-cat /etc/hysteria/client-uri.txt
-```
-
-The URI format: `hysteria2://password@domain:443/?obfs=salamander&obfs-password=xxx&sni=domain`
 
 ## What the script does
 
