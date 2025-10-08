@@ -46,8 +46,14 @@ install_hysteria_binary() {
   if ! command -v hysteria >/dev/null 2>&1; then
     # Официальный инсталлятор: ставит бинарь и службу
     bash <(curl -fsSL https://get.hy2.sh/)
+    # Обновляем PATH после установки
+    export PATH="/usr/local/bin:$PATH"
   fi
-  command -v hysteria >/dev/null 2>&1 || { echo "hysteria not found after install"; exit 1; }
+  # Проверяем установку через прямой путь
+  if ! command -v hysteria >/dev/null 2>&1 && [ ! -x /usr/local/bin/hysteria ]; then
+    echo "hysteria not found after install" >&2
+    exit 1
+  fi
 }
 
 ensure_dirs() {
