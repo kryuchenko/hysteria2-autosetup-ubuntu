@@ -234,6 +234,95 @@ check_dns_resolution() {
   echo "✓ DNS check passed: ${domain} → ${server_ip}"
 }
 
+check_external_accessibility() {
+  local domain="$1"
+  local server_ip
+  server_ip=$(curl -s -4 ifconfig.me || curl -s -4 icanhazip.com || echo "")
+
+  echo "=== Checking external accessibility ==="
+  echo
+
+  # Check local port binding first
+  echo "Checking local port binding..."
+  if ss -ulpn 2>/dev/null | grep -q ":443 "; then
+    echo "✓ UDP port 443 is listening locally (Hysteria)"
+  else
+    echo "✗ UDP port 443 is NOT listening"
+  fi
+
+  if ss -tlpn 2>/dev/null | grep -q ":443 "; then
+    echo "✓ TCP port 443 is listening locally"
+  else
+    echo "ℹ️  TCP port 443 is not listening (normal for Hysteria UDP-only mode)"
+  fi
+
+  # Check firewall rules
+  echo
+  echo "Checking firewall rules..."
+  if command -v ufw >/dev/null 2>&1; then
+    if ufw status | grep -q "443.*ALLOW"; then
+      echo "✓ UFW firewall allows port 443"
+    else
+      echo "⚠️  Warning: UFW may be blocking port 443"
+    fi
+  fi
+
+  # Check DNS resolution from server
+  echo
+  echo "Verifying DNS resolution from server..."
+  local resolved_ip
+  resolved_ip=$(dig +short "$domain" A 2>/dev/null | head -1 || echo "")
+
+  if [[ -n "$resolved_ip" ]]; then
+    if [[ "$resolved_ip" == "$server_ip" ]]; then
+      echo "✓ DNS resolves correctly: ${domain} → ${server_ip}"
+    else
+      echo "⚠️  Warning: DNS mismatch - ${domain} → ${resolved_ip} (server is ${server_ip})"
+    fi
+  else
+    echo "⚠️  Warning: Could not resolve ${domain}"
+  fi
+
+  # Test external connectivity using nc to check UDP port availability
+  echo
+  echo "Testing external UDP connectivity..."
+  echo "ℹ️  Note: UDP port tests are unreliable without a proper Hysteria client"
+  echo "   The most reliable test is to use the client URI with a Hysteria client"
+
+  # Check if we can at least send UDP packets to the port
+  if command -v nc >/dev/null 2>&1; then
+    if timeout 3 bash -c "echo 'test' | nc -u -w 1 ${server_ip} 443 2>&1" >/dev/null; then
+      echo "✓ Can send UDP packets to port 443"
+    else
+      echo "ℹ️  UDP connectivity test inconclusive (this is normal)"
+    fi
+  fi
+
+  # Check recent service logs for errors
+  echo
+  echo "Checking for service errors in recent logs..."
+  if journalctl -u hysteria-server.service --since "5 minutes ago" 2>/dev/null | grep -qi "error\|fatal\|failed"; then
+    local error_count
+    error_count=$(journalctl -u hysteria-server.service --since "5 minutes ago" 2>/dev/null | grep -c -i "error\|fatal\|failed")
+    echo "⚠️  Found ${error_count} error(s) in recent logs"
+    echo "   Check logs: journalctl -u hysteria-server.service -e --no-pager"
+  else
+    echo "✓ No errors in recent service logs"
+  fi
+
+  # Summary
+  echo
+  echo "=== Connectivity Summary ==="
+  echo "Server IP: ${server_ip}"
+  echo "Domain: ${domain}"
+  echo
+  echo "To test the connection:"
+  echo "1. Install Hysteria client from https://hysteria.network/docs/getting-started/Installation/"
+  echo "2. Use the client URI shown below"
+  echo "3. Try browsing the web or run: curl -x socks5h://127.0.0.1:1080 https://www.google.com"
+  echo
+}
+
 menu_server() {
   local domain="$1" email="$2"
 
@@ -273,6 +362,10 @@ menu_server() {
     echo "   journalctl -u hysteria-server.service -e --no-pager"
   fi
 
+  echo
+  # External accessibility check
+  check_external_accessibility "$domain"
+
   local uri="hysteria2://${auth_pass}@${domain}:443/?obfs=salamander&obfs-password=${obfs_pass}&sni=${domain}"
 
   # Save URI to file
@@ -291,8 +384,71 @@ menu_server() {
   echo "  Firewall: cat /etc/hysteria/firewall-setup.log"
 }
 
+# Check existing installation
+check_existing_installation() {
+  echo "=== Checking existing Hysteria installation ==="
+  echo
+
+  # Check if hysteria is installed
+  if ! command -v hysteria >/dev/null 2>&1 && [ ! -x /usr/local/bin/hysteria ]; then
+    echo "✗ Hysteria is not installed"
+    return 1
+  fi
+  echo "✓ Hysteria binary found"
+
+  # Check if config exists
+  if [ ! -f /etc/hysteria/config.yaml ]; then
+    echo "✗ Configuration file not found"
+    return 1
+  fi
+  echo "✓ Configuration file exists"
+
+  # Check service status
+  if systemctl is-active --quiet hysteria-server.service; then
+    echo "✓ Hysteria service is running"
+  else
+    echo "✗ Hysteria service is NOT running"
+    echo "  Start with: systemctl start hysteria-server.service"
+    return 1
+  fi
+
+  # Extract domain from config
+  local domain
+  domain=$(grep -oP '^\s*-\s*\K[a-zA-Z0-9.-]+' /etc/hysteria/config.yaml 2>/dev/null | head -1)
+
+  if [ -z "$domain" ]; then
+    echo "⚠️  Could not extract domain from config"
+    domain=$(hostname -f 2>/dev/null || hostname)
+  fi
+
+  echo "✓ Domain: $domain"
+  echo
+
+  # Run external accessibility check
+  check_external_accessibility "$domain"
+
+  # Show client URI if exists
+  if [ -f /etc/hysteria/client-uri.txt ]; then
+    echo
+    echo "=== Client Connection URI ==="
+    cat /etc/hysteria/client-uri.txt
+    echo
+  fi
+
+  echo "=== Service logs (last 10 lines) ==="
+  journalctl -u hysteria-server.service -n 10 --no-pager
+}
+
 # ---------- Entry ----------
 must_root
+
+# Check if first argument is --check
+if [[ "${1:-}" == "--check" ]]; then
+  echo "Running connectivity check on existing installation..."
+  echo
+  check_existing_installation
+  exit 0
+fi
 
 # Check Ubuntu version
 if ! is_ubuntu_supported; then
@@ -306,6 +462,7 @@ fi
 # Require domain and email arguments
 if [[ -z "${1:-}" || -z "${2:-}" ]]; then
   echo "Usage: $0 <domain> <email>" >&2
+  echo "       $0 --check  (test existing installation)" >&2
   echo "Example: $0 yourdomain.com admin@example.com" >&2
   exit 1
 fi
