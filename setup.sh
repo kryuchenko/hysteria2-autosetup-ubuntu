@@ -7,8 +7,12 @@
 #   2. Ports 80/TCP (ACME), 443/TCP+UDP (Hysteria) must be open
 #
 # Usage:
-#   sudo ./setup.sh yourdomain.com admin@example.com
-#   cat /etc/hysteria/client-uri.txt  # Get hysteria2:// URI
+#   Local:
+#     curl -fsSL https://raw.githubusercontent.com/kryuchenko/hysteria2-autosetup-ubuntu/refs/heads/main/setup.sh | sudo bash -s yourdomain.com admin@example.com
+#   Via SSH:
+#     ssh your-server 'curl -fsSL https://raw.githubusercontent.com/kryuchenko/hysteria2-autosetup-ubuntu/refs/heads/main/setup.sh | sudo bash -s yourdomain.com admin@example.com'
+#   Get connection URI:
+#     cat /etc/hysteria/client-uri.txt
 #
 # Arguments:
 #   yourdomain.com   - Your domain name (must resolve to this server)
@@ -83,12 +87,12 @@ ufw_server_rules() {
   echo "=== Firewall setup log $(date) ===" > "$log_file"
 
   # Allow SSH first to prevent losing access
-  ufw --force allow 22/tcp 2>&1 | tee -a "$log_file" || true
+  ufw allow 22/tcp 2>&1 | tee -a "$log_file" || true
 
   # Allow ACME and Hysteria traffic (443/udp+tcp)
-  ufw --force allow 80/tcp 2>&1 | tee -a "$log_file" || true
-  ufw --force allow 443/tcp 2>&1 | tee -a "$log_file" || true
-  ufw --force allow 443/udp 2>&1 | tee -a "$log_file" || true
+  ufw allow 80/tcp 2>&1 | tee -a "$log_file" || true
+  ufw allow 443/tcp 2>&1 | tee -a "$log_file" || true
+  ufw allow 443/udp 2>&1 | tee -a "$log_file" || true
 
   if ufw status | grep -q "Status: inactive"; then
     ufw --force enable 2>&1 | tee -a "$log_file"
