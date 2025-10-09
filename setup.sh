@@ -124,7 +124,10 @@ ufw_server_rules() {
 
 write_server_config() {
   local domain="$1" email="$2" obfs_pass="$3" auth_pass="$4" masquerade_url="$5"
-  cat >/etc/hysteria/config.yaml <<YAML
+
+  if [[ -n "$domain" && -n "$email" ]]; then
+    # ACME mode with Let's Encrypt
+    cat >/etc/hysteria/config.yaml <<YAML
 listen: :443
 
 acme:
@@ -149,6 +152,34 @@ masquerade:
     url: ${masquerade_url}
     rewriteHost: true
 YAML
+  else
+    # Self-signed certificate mode
+    cat >/etc/hysteria/config.yaml <<YAML
+listen: :443
+
+tls:
+  cert: /etc/hysteria/cert.pem
+  key: /etc/hysteria/key.pem
+
+# Maximum obfuscation with Salamander
+obfs:
+  type: salamander
+  salamander:
+    password: "${obfs_pass}"
+
+auth:
+  type: password
+  password: "${auth_pass}"
+
+# Masquerade as regular website
+masquerade:
+  type: proxy
+  proxy:
+    url: ${masquerade_url}
+    rewriteHost: true
+YAML
+  fi
+
   chmod 640 /etc/hysteria/config.yaml
   chown hysteria:hysteria /etc/hysteria/config.yaml
 }
